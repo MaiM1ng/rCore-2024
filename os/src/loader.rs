@@ -74,6 +74,11 @@ pub fn load_apps() {
     unsafe {
         asm!("fence.i");
     }
+
+    for (i, &app) in app_start.iter().enumerate() {
+        println!("[Kernel] app_{} image at 0x{:x}", i, app);
+    }
+
     // load apps
     for i in 0..num_app {
         let base_i = get_base_i(i);

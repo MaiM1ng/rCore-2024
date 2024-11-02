@@ -44,9 +44,9 @@ $(KERNEL_BIN): kernel
 	@$(OBJCOPY) $(KERNEL_ELF) --strip-all -O binary $@
 
 kernel:
-	@make -C ../user build TEST=$(TEST) CHAPTER=$(CHAPTER) BASE=$(BASE)
+	make -C ../user build TEST=$(TEST) CHAPTER=$(CHAPTER) BASE=$(BASE)
 	@echo Platform: $(BOARD)
-	@cargo build $(MODE_ARG)
+	cargo build $(MODE_ARG)
 
 clean:
 	@cargo clean
@@ -62,7 +62,7 @@ disasm-vim: kernel
 run: run-inner
 
 run-inner: build
-	@qemu-system-riscv64 \
+	qemu-system-riscv64 \
 		-machine virt \
 		-nographic \
 		-bios $(BOOTLOADER) \

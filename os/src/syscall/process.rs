@@ -59,6 +59,7 @@ pub fn sys_task_info(ti: *mut TaskInfo) -> isize {
     let first_time = get_current_task_first_running_time();
     let gap = get_time_ms() - first_time;
     let sc_times = get_current_task_syscall_times();
+
     unsafe {
         *ti = TaskInfo {
             status: TaskStatus::Running,
