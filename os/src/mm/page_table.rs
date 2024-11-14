@@ -1,6 +1,10 @@
 //! Implementation of [`PageTableEntry`] and [`PageTable`].
 
-use super::{frame_alloc, FrameTracker, PhysPageNum, StepByOne, VirtAddr, VirtPageNum};
+use core::ptr::{self};
+
+use crate::config::PAGE_SIZE;
+
+use super::{frame_alloc, FrameTracker, MapArea, PhysPageNum, StepByOne, VirtAddr, VirtPageNum};
 use alloc::vec;
 use alloc::vec::Vec;
 use bitflags::*;
@@ -87,6 +91,7 @@ impl PageTable {
             frames: Vec::new(),
         }
     }
+
     /// Find PageTableEntry by VirtPageNum, create a frame for a 4KB page table if not exist
     fn find_pte_create(&mut self, vpn: VirtPageNum) -> Option<&mut PageTableEntry> {
         let idxs = vpn.indexes();
@@ -107,6 +112,7 @@ impl PageTable {
         }
         result
     }
+
     /// Find PageTableEntry by VirtPageNum
     fn find_pte(&self, vpn: VirtPageNum) -> Option<&mut PageTableEntry> {
         let idxs = vpn.indexes();
@@ -147,6 +153,15 @@ impl PageTable {
     pub fn token(&self) -> usize {
         8usize << 60 | self.root_ppn.0
     }
+
+    /// 判断页表中是否存在VPN
+    pub fn find_vpn(&self, vpn: VirtPageNum) -> bool {
+        if let Some(pte) = self.find_pte(vpn) {
+            return pte.is_valid();
+        } else {
+            false
+        }
+    }
 }
 
 /// Translate&Copy a ptr[u8] array with LENGTH len to a mutable u8 Vec through page table
@@ -170,4 +185,53 @@ pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&
         start = end_va.into();
     }
     v
+}
+
+/// 将给定 data 长度为len的数据写入ptr指向的va中
+pub fn translated_and_write_bytes(token: usize, ptr: *const u8, data: *const u8, len: usize) {
+    let page_table = PageTable::from_token(token);
+    let mut start = ptr as usize;
+    let end = start + len;
+    let mut write_cnt = 0;
+
+    while start < end {
+        let start_va: VirtAddr = VirtAddr::from(start);
+        let mut vpn: VirtPageNum = start_va.floor();
+        let ppn = page_table.translate(vpn).unwrap().ppn();
+        vpn.step();
+        let mut end_va: VirtAddr = vpn.into();
+        end_va = end_va.min(VirtAddr::from(end));
+
+        let address_array = ppn.get_bytes_array();
+        unsafe {
+            if end_va.page_offset() == 0 {
+                for i in start_va.page_offset()..PAGE_SIZE {
+                    let addr = address_array.as_mut_ptr().add(i);
+                    ptr::write_volatile(addr, *data.add(write_cnt));
+                    write_cnt += 1;
+                }
+            } else {
+                for i in start_va.page_offset()..end_va.page_offset() {
+                    let addr = address_array.as_mut_ptr().add(i);
+                    ptr::write_volatile(addr, *data.add(write_cnt));
+                    write_cnt += 1;
+                }
+            }
+        }
+        start = end_va.into();
+    }
+}
+
+/// 检查一段内存是否已经被map过了
+pub fn check_map_area_mapping(token: usize, map_area: MapArea) -> bool {
+    let page_table = PageTable::from_token(token);
+
+    map_area.check_mapping(&page_table)
+}
+
+/// 检查一段内存中是否存在未映射的区域
+pub fn check_map_area_unmapping(token: usize, map_area: MapArea) -> bool {
+    let page_table = PageTable::from_token(token);
+
+    map_area.check_unmapping(&page_table)
 }

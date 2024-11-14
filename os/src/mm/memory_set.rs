@@ -262,6 +262,21 @@ impl MemorySet {
             false
         }
     }
+
+    /// 保证区域一定都在页表当中
+    pub fn munmap_area(&mut self, start_va: VirtAddr, end_va: VirtAddr) {
+        let start_vpn = start_va.floor();
+        let end_vpn = end_va.ceil();
+
+        self.areas.retain_mut(|area| {
+            if end_vpn <= area.get_end() && start_vpn >= area.get_start() {
+                area.unmap(&mut self.page_table);
+                false
+            } else {
+                true
+            }
+        })
+    }
 }
 /// map area structure, controls a contiguous piece of virtual memory
 pub struct MapArea {
@@ -272,6 +287,7 @@ pub struct MapArea {
 }
 
 impl MapArea {
+    /// 创建
     pub fn new(
         start_va: VirtAddr,
         end_va: VirtAddr,
@@ -287,6 +303,7 @@ impl MapArea {
             map_perm,
         }
     }
+    /// map one
     pub fn map_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
         let ppn: PhysPageNum;
         match self.map_type {
@@ -302,6 +319,7 @@ impl MapArea {
         let pte_flags = PTEFlags::from_bits(self.map_perm.bits).unwrap();
         page_table.map(vpn, ppn, pte_flags);
     }
+    /// unmap one
     #[allow(unused)]
     pub fn unmap_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
         if self.map_type == MapType::Framed {
@@ -309,17 +327,23 @@ impl MapArea {
         }
         page_table.unmap(vpn);
     }
+
+    /// map
     pub fn map(&mut self, page_table: &mut PageTable) {
         for vpn in self.vpn_range {
             self.map_one(page_table, vpn);
         }
     }
+
+    /// unmap
     #[allow(unused)]
     pub fn unmap(&mut self, page_table: &mut PageTable) {
         for vpn in self.vpn_range {
             self.unmap_one(page_table, vpn);
         }
     }
+
+    /// shrink_to
     #[allow(unused)]
     pub fn shrink_to(&mut self, page_table: &mut PageTable, new_end: VirtPageNum) {
         for vpn in VPNRange::new(new_end, self.vpn_range.get_end()) {
@@ -327,6 +351,8 @@ impl MapArea {
         }
         self.vpn_range = VPNRange::new(self.vpn_range.get_start(), new_end);
     }
+
+    /// append_to
     #[allow(unused)]
     pub fn append_to(&mut self, page_table: &mut PageTable, new_end: VirtPageNum) {
         for vpn in VPNRange::new(self.vpn_range.get_end(), new_end) {
@@ -356,12 +382,49 @@ impl MapArea {
             current_vpn.step();
         }
     }
+
+    /// 虚拟页面的数量
+    pub fn vpn_len(&self) -> usize {
+        self.vpn_range.get_end().0 - self.vpn_range.get_start().0 + 1
+    }
+
+    /// 检查是否被映射过
+    pub fn check_mapping(&self, page_table: &PageTable) -> bool {
+        for vpn in self.vpn_range {
+            if page_table.find_vpn(vpn) {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// 检查是否存在未映射的内存区域
+    pub fn check_unmapping(&self, page_table: &PageTable) -> bool {
+        for vpn in self.vpn_range {
+            if !page_table.find_vpn(vpn) {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// 返回起点VPN
+    pub fn get_start(&self) -> VirtPageNum {
+        self.vpn_range.get_start()
+    }
+
+    /// 返回终点VPN
+    pub fn get_end(&self) -> VirtPageNum {
+        self.vpn_range.get_end()
+    }
 }
 
 #[derive(Copy, Clone, PartialEq, Debug)]
 /// map type for memory set: identical or framed
 pub enum MapType {
+    /// 直接映射
     Identical,
+    /// 分配映射
     Framed,
 }
 

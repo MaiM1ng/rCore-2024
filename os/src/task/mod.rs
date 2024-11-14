@@ -15,11 +15,14 @@ mod switch;
 mod task;
 
 use crate::loader::{get_app_data, get_num_app};
+use crate::mm::{MapPermission, VirtAddr};
 use crate::sync::UPSafeCell;
+use crate::timer::get_time_ms;
 use crate::trap::TrapContext;
 use alloc::vec::Vec;
 use lazy_static::*;
 use switch::__switch;
+pub use task::TaskInfoInner;
 pub use task::{TaskControlBlock, TaskStatus};
 
 pub use context::TaskContext;
@@ -79,6 +82,8 @@ impl TaskManager {
         let mut inner = self.inner.exclusive_access();
         let next_task = &mut inner.tasks[0];
         next_task.task_status = TaskStatus::Running;
+        next_task.task_info_inner.first_run_flag = false;
+        next_task.task_info_inner.first_run_time = get_time_ms();
         let next_task_cx_ptr = &next_task.task_cx as *const TaskContext;
         drop(inner);
         let mut _unused = TaskContext::zero_init();
@@ -143,6 +148,12 @@ impl TaskManager {
             inner.current_task = next;
             let current_task_cx_ptr = &mut inner.tasks[current].task_cx as *mut TaskContext;
             let next_task_cx_ptr = &inner.tasks[next].task_cx as *const TaskContext;
+
+            if inner.tasks[next].task_info_inner.first_run_flag {
+                inner.tasks[next].task_info_inner.first_run_flag = false;
+                inner.tasks[next].task_info_inner.first_run_time = get_time_ms();
+            }
+
             drop(inner);
             // before this, we should drop local variables that must be dropped manually
             unsafe {
@@ -152,6 +163,39 @@ impl TaskManager {
         } else {
             panic!("All applications completed!");
         }
+    }
+
+    fn update_current_task_syscall_times(&self, syscall_id: usize) {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].task_info_inner.syscall_times[syscall_id] += 1;
+    }
+
+    fn current_task_task_info_inner(&self) -> TaskInfoInner {
+        let inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].task_info_inner
+    }
+
+    fn mapping_address_for_current_task(
+        &self,
+        start_va: VirtAddr,
+        end_va: VirtAddr,
+        map_perm: MapPermission,
+    ) {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current]
+            .memory_set
+            .insert_framed_area(start_va, end_va, map_perm);
+    }
+
+    fn unmapping_address_for_current_task(&self, start_va: VirtAddr, end_va: VirtAddr) {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current]
+            .memory_set
+            .munmap_area(start_va, end_va);
     }
 }
 
@@ -201,4 +245,28 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
 /// Change the current 'Running' task's program break
 pub fn change_program_brk(size: i32) -> Option<usize> {
     TASK_MANAGER.change_current_program_brk(size)
+}
+
+/// update_current_task_syscall_times
+pub fn do_update_current_task_syscall_times(syscall_id: usize) {
+    TASK_MANAGER.update_current_task_syscall_times(syscall_id);
+}
+
+/// get current task task_info_inner
+pub fn get_current_task_task_info_inner() -> TaskInfoInner {
+    TASK_MANAGER.current_task_task_info_inner()
+}
+
+/// 给当前任务映射一片内存
+pub fn mapping_address_for_current_task(
+    start_va: VirtAddr,
+    end_va: VirtAddr,
+    map_perm: MapPermission,
+) {
+    TASK_MANAGER.mapping_address_for_current_task(start_va, end_va, map_perm);
+}
+
+/// 给当前任务取消映射一块内存
+pub fn unmapping_address_for_current_task(start_va: VirtAddr, end_va: VirtAddr) {
+    TASK_MANAGER.unmapping_address_for_current_task(start_va, end_va);
 }

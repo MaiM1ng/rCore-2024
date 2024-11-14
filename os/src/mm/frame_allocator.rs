@@ -56,6 +56,10 @@ impl StackFrameAllocator {
         self.end = r.0;
         // trace!("last {} Physical Frames.", self.end - self.current);
     }
+
+    pub fn available_pages(&self) -> usize {
+        self.recycled.len() + self.end - self.current
+    }
 }
 impl FrameAllocator for StackFrameAllocator {
     fn new() -> Self {
@@ -115,6 +119,11 @@ pub fn frame_alloc() -> Option<FrameTracker> {
 /// Deallocate a physical page frame with a given ppn
 pub fn frame_dealloc(ppn: PhysPageNum) {
     FRAME_ALLOCATOR.exclusive_access().dealloc(ppn);
+}
+
+/// 返回还剩余多少
+pub fn frame_available(need: usize) -> bool {
+    FRAME_ALLOCATOR.exclusive_access().available_pages() >= need
 }
 
 #[allow(unused)]
