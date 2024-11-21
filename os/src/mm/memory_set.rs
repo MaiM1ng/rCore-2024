@@ -408,12 +408,12 @@ impl MapArea {
         false
     }
 
-    /// 返回起点VPN
+    /// 获取start
     pub fn get_start(&self) -> VirtPageNum {
         self.vpn_range.get_start()
     }
 
-    /// 返回终点VPN
+    /// 获取终点
     pub fn get_end(&self) -> VirtPageNum {
         self.vpn_range.get_end()
     }
