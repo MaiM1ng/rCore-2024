@@ -11,7 +11,7 @@
 //! submodules, and you should also implement syscalls this way.
 /// read syscall
 const SYSCALL_READ: usize = 63;
-/// write syscall
+/// write syscall    task::run_first_task();
 const SYSCALL_WRITE: usize = 64;
 /// exit syscall
 const SYSCALL_EXIT: usize = 93;
